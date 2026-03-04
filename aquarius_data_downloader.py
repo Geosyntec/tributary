@@ -4,6 +4,7 @@ import logging
 import csv
 import os
 import pandas as pd
+import sqlite3
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -13,6 +14,7 @@ load_dotenv()
 BASE_URL = os.getenv("AQUARIUS_BASE_URL")
 USERNAME = os.getenv("AQUARIUS_USERNAME")
 PASSWORD = os.getenv("AQUARIUS_PASSWORD")
+OUTPUT_DIR = os.getenv("OUTPUT_DIRECTORY")
 
 # Set up logging
 logging.basicConfig(
@@ -232,8 +234,8 @@ class AquariusPortal:
 
         for ds in datasets_list:
             identifier = ds.get("identifier", "")
-            start = ds.get("startOfRecord") or "" [:10]
-            end = ds.get("endOfRecord") or ""[:10]
+            start = (ds.get("startOfRecord") or "")[:10]
+            end = (ds.get("endOfRecord") or "")[:10]
 
             matches = True
 
@@ -265,6 +267,7 @@ class AquariusPortal:
             
         logger.info(f"Found {len(matching)}")
         return matching
+    
 def export_full_record(api, dataset_info):
     identifier = dataset_info.get("identifier")
     start_of_record = dataset_info.get("startOfRecord")
@@ -295,7 +298,7 @@ def export_multiple_datasets(api, datasets_list):
         else:
             logger.warning(f"  Failed to export {identifier}")
     
-    return
+    return results
 
 def save_to_csv(data, filename):
 
@@ -311,13 +314,13 @@ def save_to_csv(data, filename):
         writer.writerow(["timestamp", "value", "location", "parameter", "unit"])
 
         full_path = os.path.abspath(filename)
-        total_points = sum(s.get("numpoints", 0) for s in data["series"])
+        total_points = sum(s.get("numPoints", 0) for s in data["series"])
         logger.info(f"Saving {total_points} data points to {full_path}")
 
         for series in data["series"]:
             dataset_info = series["dataset"]
-            location = dataset_info.get("locationIdentifier", ""),
-            parameter = dataset_info.get("parameter", ""),
+            location = dataset_info.get("locationIdentifier", "")
+            parameter = dataset_info.get("parameter", "")
             unit = dataset_info.get("unit", "")
 
             points = series.get("points", [])
@@ -340,15 +343,15 @@ def clean_for_filename(text):
     replacements = {
         "@": "_at_",
         ".": "_",
-        "/": "_,",
+        "/": "_",
         "\\": "_",
-        ":": "_,",
+        ":": "_",
         "*": "_",
-        "?": "_,",
+        "?": "_",
         '"': "_",
-        "<": "_,",
+        "<": "_",
         ">": "_",
-        "|": "_,",
+        "|": "_",
         " ": "_"
     }
 
@@ -381,7 +384,8 @@ def save_dataset_to_csv(dataset_info, data, output_dir):
     return save_to_csv(data, filepath)
 
 def download_all_precipitation(api, output_dir):
-
+    dl_csv = False
+    dl_sql = True
     logger.info("Finding Datasets")
 
     ##################################################
@@ -408,26 +412,77 @@ def download_all_precipitation(api, output_dir):
 
         data = export_full_record(api, dataset_info)
 
-        if data:
+        if data and dl_csv:
             save_dataset_to_csv(dataset_info, data, output_dir)
+        elif data and dl_sql:
+            create_database(dataset_info, data, output_dir)
         else:
-            logger.warning(f"  Skipped - no data returned")
+            logger.warning("  Skipped - no data returned")
     
     logger.info(f"Complete! Files saved to: {os.path.abspath(output_dir)}")
+
+def create_database(dataset_info, data, output_dir):
+
+    filename = generate_filename(dataset_info, output_dir)
+    full_path = os.path.abspath(filename)
+
+    with sqlite3.connect(f"{OUTPUT_DIR}/precipitation.db") as conn:
+        cursor = conn.cursor()
+
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS precipitation_data ( 
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT NOT NULL,
+            value REAL,
+            location TEXT NOT NULL,
+            unit TEXT NOT NULL
+        )
+        """)
+        # Creates table precipitation data
+        # Creates column named id with type integer. 
+        # Primary key is unique identifier for each row, automatically assigns 1, 2, 3 etc.
+        # Cannot be a null value
+        # Creates Column named values which contains REAL numbers (decimals 0.1, 3.22 etc.)
+
+        full_path = os.path.abspath(filename)
+        total_points = sum(s.get("numPoints", 0) for s in data["series"])
+        logger.info(f"Saving {total_points} data points to {full_path}")
+
+        for series in data["series"]:
+            dataset_info = series["dataset"]
+            location = dataset_info.get("locationIdentifier", "")
+            parameter = dataset_info.get("parameter", "")
+            unit = dataset_info.get("unit", "")
+            identifier = dataset_info.get("identifier")
+
+            points = series.get("points", [])
+
+            for point in points:
+                timestamp = point.get("timestamp", "")
+                value = point.get("value", "")
+
+                cursor.execute("""
+                INSERT INTO precipitation_data (timestamp, value, location, unit, identifier)
+                VALUES (?, ?, ?, ?)
+            """, [timestamp, value, location, parameter, unit, identifier])
+                
+    logger.info(f"Saved to {full_path}")
+    # Notes
+    # conn.rollback() undo last commit changes 
 
 def data_analysis():
     df = pd.read_csv("C:/Users/Guy.McFeeters/OneDrive - Geosyntec/BES_SPEC_MOD_ONCALL_TEAM - GC001_BES_Rainfall_Analysis_Task/Code/Outputs/Precip_Increm_15Minute_at_HYDRA-6_1976-04-02_to_2026-03-03_downloaded_2026-03-03.csv")  
     return df
 
 def main():
-    OUTPUT_DIR = "C:/Users/Guy.McFeeters/OneDrive - Geosyntec/BES_SPEC_MOD_ONCALL_TEAM - GC001_BES_Rainfall_Analysis_Task/Code/Outputs"
+    #OUTPUT_DIR = "C:/Users/Guy.McFeeters/OneDrive - Geosyntec/BES_SPEC_MOD_ONCALL_TEAM - GC001_BES_Rainfall_Analysis_Task/Code/Outputs/Tests"
     api = AquariusPortal(
         base_url = BASE_URL,
         username = USERNAME,
         password = PASSWORD,
         verify_ssl = False # Skip SSL verification for work network
     )
-    
+
     download_all_precipitation(api, OUTPUT_DIR)
 
 if __name__ == "__main__":
