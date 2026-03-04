@@ -361,15 +361,22 @@ def clean_for_filename(text):
 
     return result
 
-def generate_filename(dataset_info, output_dir):
-    identifier = dataset_info.get("identifier", "unknown")
-    start_of_record = dataset_info.get("startOfRecord")[:10]
-    end_of_record = dataset_info.get("endOfRecord")[:10]
+def generate_filename(dataset_info=None, output_dir=None, dl_csv=False, dl_sql=False):
+
     download_date = datetime.now().strftime("%Y-%m-%d")
 
-    safe_identifier = clean_for_filename(identifier)
+    if dl_csv:
+        identifier = dataset_info.get("identifier", "unknown")
+        start_of_record = dataset_info.get("startOfRecord")[:10]
+        end_of_record = dataset_info.get("endOfRecord")[:10]
+        
 
-    filename = f"{safe_identifier}_{start_of_record}_to_{end_of_record}_downloaded_{download_date}.csv"
+        safe_identifier = clean_for_filename(identifier)
+
+        filename = f"{safe_identifier}_{start_of_record}_to_{end_of_record}_downloaded_{download_date}.csv"
+    
+    elif dl_sql:
+        filename = f"precipitation_15min_downloaded_{download_date}.db"
 
     if output_dir:
         os.makedirs(output_dir, exist_ok=True)
@@ -379,13 +386,12 @@ def generate_filename(dataset_info, output_dir):
 
 def save_dataset_to_csv(dataset_info, data, output_dir):
 
-    filepath = generate_filename(dataset_info, output_dir)
+    filepath = generate_filename(dataset_info, output_dir, dl_csv = True)
 
     return save_to_csv(data, filepath)
 
-def download_all_precipitation(api, output_dir):
-    dl_csv = False
-    dl_sql = True
+def download_all_precipitation(api, output_dir, dl_csv, dl_sql):
+    
     logger.info("Finding Datasets")
 
     ##################################################
@@ -414,7 +420,7 @@ def download_all_precipitation(api, output_dir):
 
         if data and dl_csv:
             save_dataset_to_csv(dataset_info, data, output_dir)
-        elif data and dl_sql:
+        if data and dl_sql:
             create_database(dataset_info, data, output_dir)
         else:
             logger.warning("  Skipped - no data returned")
@@ -427,7 +433,7 @@ def create_database(dataset_info, data, output_dir):
         logger.error("No data to save")
         return
     
-    db_path = os.path.join(output_dir, "precipitation.db")
+    db_path = generate_filename(output_dir=output_dir, dl_sql = True)
 
     with sqlite3.connect(db_path) as conn:
         cursor = conn.cursor()
@@ -497,7 +503,45 @@ def main():
         verify_ssl = False # Skip SSL verification for work network
     )
 
-    download_all_precipitation(api, OUTPUT_DIR)
+    download_all_precipitation(api, OUTPUT_DIR, dl_csv=True, dl_sql=True)
+
+    # Testing with Just one Dataset:
+    """
+    matching = api.find_datasets(
+        must_contain_all=["precip", "15min"],
+        must_start_before="1980-01-01",
+        must_end_after="2026-01-01"
+    )
+
+    if not matching:
+        logger.error("No datasets found")
+        return
+
+    logger.info(f"Testing with first dataset: {matching[0].get('identifier')}")
+
+    data = export_full_record(api, matching[0])
+
+    if data:
+        create_database(matching[0], data, OUTPUT_DIR)
+        logger.info("Test complete! Check the database")
+    else:
+        logger.error("No data returned")
+    """
+    # Checking the database
+
+    db_path = os.path.join(OUTPUT_DIR, "precipitation.db")
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT COUNT(*) FROM precipitation_data")
+    print(f"Total rows: {cursor.fetchone()[0]}")
+
+    cursor.execute("SELECT * FROM precipitation_data LIMIT 5")
+    for row in cursor.fetchall():
+        print(row)
+    
+    conn.close()
+
 
 if __name__ == "__main__":
     main()
