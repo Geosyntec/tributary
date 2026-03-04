@@ -423,20 +423,25 @@ def download_all_precipitation(api, output_dir):
 
 def create_database(dataset_info, data, output_dir):
 
-    filename = generate_filename(dataset_info, output_dir)
-    full_path = os.path.abspath(filename)
+    if not data or "series" not in data:
+        logger.error("No data to save")
+        return
+    
+    db_path = os.path.join(output_dir, "precipitation.db")
 
-    with sqlite3.connect(f"{OUTPUT_DIR}/precipitation.db") as conn:
+    with sqlite3.connect(db_path) as conn:
         cursor = conn.cursor()
 
         cursor.execute("""
-        CREATE TABLE IF NOT EXISTS precipitation_data ( 
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp TEXT NOT NULL,
-            value REAL,
-            location TEXT NOT NULL,
-            unit TEXT NOT NULL
-        )
+            CREATE TABLE IF NOT EXISTS precipitation_data ( 
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                value REAL,
+                location TEXT,
+                parameter TEXT,
+                unit TEXT,
+                dataset_identifier TEXT
+            )
         """)
         # Creates table precipitation data
         # Creates column named id with type integer. 
@@ -444,9 +449,7 @@ def create_database(dataset_info, data, output_dir):
         # Cannot be a null value
         # Creates Column named values which contains REAL numbers (decimals 0.1, 3.22 etc.)
 
-        full_path = os.path.abspath(filename)
-        total_points = sum(s.get("numPoints", 0) for s in data["series"])
-        logger.info(f"Saving {total_points} data points to {full_path}")
+        rows_to_insert = []
 
         for series in data["series"]:
             dataset_info = series["dataset"]
@@ -461,12 +464,23 @@ def create_database(dataset_info, data, output_dir):
                 timestamp = point.get("timestamp", "")
                 value = point.get("value", "")
 
-                cursor.execute("""
-                INSERT INTO precipitation_data (timestamp, value, location, unit, identifier)
-                VALUES (?, ?, ?, ?)
-            """, [timestamp, value, location, parameter, unit, identifier])
+                rows_to_insert.append((
+                    timestamp,
+                    value,
+                    location,
+                    parameter,
+                    unit,
+                    identifier
+                ))
+
+        cursor.executemany("""
+            INSERT INTO precipitation_data (timestamp, value, location, parameter, unit, dataset_identifier)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, rows_to_insert)
+
+        conn.commit()
                 
-    logger.info(f"Saved to {full_path}")
+    logger.info(f"Saved to {db_path}")
     # Notes
     # conn.rollback() undo last commit changes 
 
