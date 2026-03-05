@@ -16,6 +16,28 @@ USERNAME = os.getenv("AQUARIUS_USERNAME")
 PASSWORD = os.getenv("AQUARIUS_PASSWORD")
 OUTPUT_DIR = os.getenv("OUTPUT_DIRECTORY")
 
+DATASET_CONFIGS = {
+    "15_min_precip_longest": {
+        "must_contain_all": ["precip", "15min"],
+        "must_contain_any": None,
+        "must_start_before": "1980-01-01",
+        "must_end_after": "2026-01-01"
+    },
+
+    "single_hydra": {
+        "must_contain_all": ["precip", "15min"],
+        "must_contain_any": ["HYDRA-2"],
+        "must_start_before": None,
+        "must_end_after": None
+    }
+}
+
+ACTIVE_CONFIG = "15_min_precip_longest"
+
+SAVE_CSV = True
+SAVE_SQL = True
+
+
 # Set up logging
 logging.basicConfig(
     level = logging.DEBUG,
@@ -378,6 +400,9 @@ def generate_filename(dataset_info=None, output_dir=None, dl_csv=False, dl_sql=F
     elif dl_sql:
         filename = f"precipitation_15min_downloaded_{download_date}.db"
 
+    else:
+        raise ValueError("Must specify either dl_csv=True or dl_sql=True")
+
     if output_dir:
         os.makedirs(output_dir, exist_ok=True)
         return os.path.join(output_dir, filename)
@@ -390,109 +415,142 @@ def save_dataset_to_csv(dataset_info, data, output_dir):
 
     return save_to_csv(data, filepath)
 
-def download_all_precipitation(api, output_dir, dl_csv, dl_sql):
+def download_all_precipitation(api, output_dir, dl_csv, dl_sql, config_name):
+
+    logger.info(f"Using configuration: {config_name}")
+
+    config = DATASET_CONFIGS[config_name]
     
-    logger.info("Finding Datasets")
+    logger.info(f"  Filters: {config['must_contain_all']}")
+    logger.info(f"  Stations: {config['must_contain_any'] or 'All'}")
 
-    ##################################################
-    ##########        CONFIGURATION         ##########
-    ##################################################
-
-    matching_datasets = api.find_datasets(
-        must_contain_all = ["precip", "15min"], # Datasets must contain all phrases in this list
-        must_start_before = "1980-01-01",       # Datasets must start before this date. Format YYYY-MM-DD
-        must_end_after = "2026-01-01"           # Datasets must end after this date. Format YYYY-MM-DD
-    )
-
-    ##################################################
-    ##################################################
-    ##################################################
+    matching_datasets = api.find_datasets(**config)
 
     if not matching_datasets:
         logger.error("No datasets found!")
         return
     
+    logger.info(f"Found {len(matching_datasets)} datasets")
+    
+    all_data = [] # List used to collect data to then be appended onto the database at the end
+
     for i, dataset_info in enumerate(matching_datasets, 1):
         identifier = dataset_info.get("identifier")
         logger.info(f"[{i}/{len(matching_datasets)}] {identifier}")
 
         data = export_full_record(api, dataset_info)
-
-        if data and dl_csv:
-            save_dataset_to_csv(dataset_info, data, output_dir)
-        if data and dl_sql:
-            create_database(dataset_info, data, output_dir)
-        else:
+        
+        if not data:
             logger.warning("  Skipped - no data returned")
-    
+            continue
+
+        if dl_csv:
+            save_dataset_to_csv(dataset_info, data, output_dir)
+        if dl_sql:
+            all_data.append((dataset_info, data))
+        
+    if dl_sql and all_data:
+        create_combined_database(all_data, output_dir)
     logger.info(f"Complete! Files saved to: {os.path.abspath(output_dir)}")
 
-def create_database(dataset_info, data, output_dir):
+def create_combined_database(all_data, output_dir):
 
-    if not data or "series" not in data:
+    if not all_data:
         logger.error("No data to save")
         return
     
     db_path = generate_filename(output_dir=output_dir, dl_sql = True)
 
+    try:
+        with sqlite3.connect(db_path) as conn:
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS precipitation_data ( 
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL,
+                    value REAL,
+                    location TEXT,
+                    parameter TEXT,
+                    unit TEXT,
+                    dataset_identifier TEXT
+                )
+            """)
+            # Creates table precipitation data
+            # Creates column named id with type integer. 
+            # Primary key is unique identifier for each row, automatically assigns 1, 2, 3 etc.
+            # Cannot be a null value
+            # Creates Column named values which contains REAL numbers (decimals 0.1, 3.22 etc.)
+
+            rows_to_insert = []
+            for dataset_info, data in all_data:
+
+                if not data or "series" not in data:
+                    continue
+
+                for series in data["series"]:
+                    series_info = series["dataset"]
+                    location = series_info.get("locationIdentifier", "")
+                    parameter = series_info.get("parameter", "")
+                    unit = series_info.get("unit", "")
+                    identifier = series_info.get("identifier")
+
+                    points = series.get("points", [])
+
+                    for point in points:
+                        timestamp = point.get("timestamp", "")
+                        value = point.get("value", "")
+
+                        rows_to_insert.append((
+                            timestamp,
+                            value,
+                            location,
+                            parameter,
+                            unit,
+                            identifier
+                        ))
+
+            cursor.executemany("""
+                INSERT INTO precipitation_data (timestamp, value, location, parameter, unit, dataset_identifier)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, rows_to_insert)
+
+            conn.commit()
+            logger.info(f"Saved to {db_path}")
+        # Notes
+        # conn.rollback() undo last commit changes 
+
+    except sqlite3.Error as e:
+        logger.error(f"Database error: {e}")
+        raise
+
+def check_database(output_dir):
+    db_path = generate_filename(output_dir = output_dir, dl_sql = True)
+
+    if not os.path.exists(db_path):
+        logger.error(f"Database not found: {db_path}")
+        return
+    
+    logger.info(f"Checking database: {db_path}")
+
     with sqlite3.connect(db_path) as conn:
+    
         cursor = conn.cursor()
 
         cursor.execute("""
-            CREATE TABLE IF NOT EXISTS precipitation_data ( 
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp TEXT NOT NULL,
-                value REAL,
-                location TEXT,
-                parameter TEXT,
-                unit TEXT,
-                dataset_identifier TEXT
-            )
+            SELECT location, COUNT(*) as count
+            FROM precipitation_data
+            GROUP BY location
+            ORDER BY count DESC
         """)
-        # Creates table precipitation data
-        # Creates column named id with type integer. 
-        # Primary key is unique identifier for each row, automatically assigns 1, 2, 3 etc.
-        # Cannot be a null value
-        # Creates Column named values which contains REAL numbers (decimals 0.1, 3.22 etc.)
+        logger.info("Rows per location:")
+        for row in cursor.fetchall():
+            print(f"  {row[0]}: {row[1]:,} rows")
 
-        rows_to_insert = []
-
-        for series in data["series"]:
-            dataset_info = series["dataset"]
-            location = dataset_info.get("locationIdentifier", "")
-            parameter = dataset_info.get("parameter", "")
-            unit = dataset_info.get("unit", "")
-            identifier = dataset_info.get("identifier")
-
-            points = series.get("points", [])
-
-            for point in points:
-                timestamp = point.get("timestamp", "")
-                value = point.get("value", "")
-
-                rows_to_insert.append((
-                    timestamp,
-                    value,
-                    location,
-                    parameter,
-                    unit,
-                    identifier
-                ))
-
-        cursor.executemany("""
-            INSERT INTO precipitation_data (timestamp, value, location, parameter, unit, dataset_identifier)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, rows_to_insert)
-
-        conn.commit()
-                
-    logger.info(f"Saved to {db_path}")
-    # Notes
-    # conn.rollback() undo last commit changes 
-
-def data_analysis():
-    df = pd.read_csv("C:/Users/Guy.McFeeters/OneDrive - Geosyntec/BES_SPEC_MOD_ONCALL_TEAM - GC001_BES_Rainfall_Analysis_Task/Code/Outputs/Precip_Increm_15Minute_at_HYDRA-6_1976-04-02_to_2026-03-03_downloaded_2026-03-03.csv")  
-    return df
+        cursor.execute("SELECT * FROM precipitation_data LIMIT 5")
+        logger.info("First 5 rows:")
+        for row in cursor.fetchall():
+            print(row)
 
 def main():
     #OUTPUT_DIR = "C:/Users/Guy.McFeeters/OneDrive - Geosyntec/BES_SPEC_MOD_ONCALL_TEAM - GC001_BES_Rainfall_Analysis_Task/Code/Outputs/Tests"
@@ -503,45 +561,9 @@ def main():
         verify_ssl = False # Skip SSL verification for work network
     )
 
-    download_all_precipitation(api, OUTPUT_DIR, dl_csv=True, dl_sql=True)
+    download_all_precipitation(api, OUTPUT_DIR, SAVE_CSV, SAVE_SQL, ACTIVE_CONFIG)
 
-    # Testing with Just one Dataset:
-    """
-    matching = api.find_datasets(
-        must_contain_all=["precip", "15min"],
-        must_start_before="1980-01-01",
-        must_end_after="2026-01-01"
-    )
-
-    if not matching:
-        logger.error("No datasets found")
-        return
-
-    logger.info(f"Testing with first dataset: {matching[0].get('identifier')}")
-
-    data = export_full_record(api, matching[0])
-
-    if data:
-        create_database(matching[0], data, OUTPUT_DIR)
-        logger.info("Test complete! Check the database")
-    else:
-        logger.error("No data returned")
-    """
-    # Checking the database
-
-    db_path = os.path.join(OUTPUT_DIR, "precipitation.db")
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-
-    cursor.execute("SELECT COUNT(*) FROM precipitation_data")
-    print(f"Total rows: {cursor.fetchone()[0]}")
-
-    cursor.execute("SELECT * FROM precipitation_data LIMIT 5")
-    for row in cursor.fetchall():
-        print(row)
-    
-    conn.close()
-
+    check_database(OUTPUT_DIR)
 
 if __name__ == "__main__":
     main()
