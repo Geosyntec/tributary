@@ -306,22 +306,6 @@ def export_full_record(api, dataset_info):
 
     return data
 
-def export_multiple_datasets(api, datasets_list):
-    results = []
-
-    for i, dataset_info in enumerate(datasets_list, 1):
-        identifier = dataset_info.get("identifier")
-        logger.info(f"[{i}/{len(datasets_list)}] Processing {identifier}")
-
-        data = export_full_record(api, dataset_info)
-
-        if data:
-            results.append((dataset_info, data))
-        else:
-            logger.warning(f"  Failed to export {identifier}")
-    
-    return results
-
 def save_to_csv(data, filename):
 
     if not data or "series" not in data:
