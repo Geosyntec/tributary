@@ -6,6 +6,7 @@ import os
 import pandas as pd
 import sqlite3
 from dotenv import load_dotenv
+import re
 
 # Load environment variables from .env file
 load_dotenv()
@@ -21,12 +22,12 @@ DATASET_CONFIGS = {
         "must_contain_all": ["precip", "15min"],
         "must_contain_any": None,
         "must_start_before": "1980-01-01",
-        "must_end_after": "2026-01-01"
+        "must_end_after": "2010-01-01"
     },
 
     "single_hydra": {
         "must_contain_all": ["precip", "15min"],
-        "must_contain_any": ["HYDRA-2"],
+        "must_contain_any": ["HYDRA-1"],
         "must_start_before": None,
         "must_end_after": None
     }
@@ -251,7 +252,7 @@ class AquariusPortal:
 
         datasets_response = self.get_datasets() # Gets all datasets
         datasets_list = datasets_response.get("datasets", []) 
-
+        
         matching = []
 
         for ds in datasets_list:
@@ -261,10 +262,16 @@ class AquariusPortal:
 
             matches = True
 
+            # Extract station name to prevent for exampole Hydra 10 when searching hydra 1
+            if "@" in identifier:
+                station = identifier.split("@")[-1]
+            else:
+                station = identifier
+
             if must_contain_any:
                 contains = False
                 for text in must_contain_any:
-                    if text.lower() in identifier.lower():
+                    if text.lower() == station.lower():
                         contains = True
                         break
                 if not contains:
