@@ -89,13 +89,51 @@ def analyze_single_gage(rain_df, gage_name):
     n_missing = missing_mask.sum()
     pct_missing = (n_missing / total_timesteps) * 100
 
-    logger.info(f"  {gage_name}: missing {n_missing:,} of {total_timesteps:,} timesteps ({pct_missing:.if}%)")
+    logger.info(f"  {gage_name}: missing {n_missing:,} of {total_timesteps:,} timesteps ({pct_missing:.1f}%)")
 
     return {
         'gage': gage_name,
         'n_missing': n_missing,
         'pct_missing': round(pct_missing, 2)
     }
+
+def investigate_data_quality(rain_df):
+
+    logger.info("\n" + "="*60)
+    logger.info("DATA QUALITY INVESTIGATION")
+    logger.info("="*60)
+
+    # Time range info
+    print(f"\nTime Range:")
+    print(f"  Start: {rain_df.index.min()}")
+    print(f"  End:   {rain_df.index.max()}")
+    print(f"  Total Timesteps: {len(rain_df):,}")
+
+    # Calc expected years
+    time_span = rain_df.index.max() - rain_df.index.min()
+    print(f"  Time span: {time_span.days / 365:.1f} years")
+
+    # Check when each gage FIRST has data
+    print(f"\nFirst valid data point per gage:")
+    for gage in rain_df.columns:
+        first_valid = rain_df[gage].first_valid_index()
+        print(f"  {gage}: {first_valid}")
+
+    for gage in rain_df.columns:
+        total = len(rain_df)
+        n_nan = rain_df[gage].isna().sum()
+        n_zero = (rain_df[gage] == 0).sum()
+        n_positive = (rain_df[gage] > 0).sum()
+
+        pct_nan = (n_nan / total) * 100
+        pct_zero = (n_zero / total) * 100
+        pct_positive = (n_positive / total) * 100
+
+        print(f"\n{gage}:")
+        print(f"  NaN (missing): {n_nan:>8,} ({pct_nan:>5.1f}%)")
+        print(f"  Zero values: {n_zero:>8,} ({pct_zero:>5.1f}%)")
+        print(f"  Positive values: {n_positive:>8,} ({pct_positive:>5.1f}%)")
+        print(f"  Total: {total:>8,}")
 
 def main():
     logger.info("Starting gauge analysis...")
@@ -114,7 +152,9 @@ def main():
     #logger.info("\nFirst 5 rows of data:")
     #print(rain_df.head())
 
-    first_gage = rain_df.columns[0]
+    investigate_data_quality(rain_df)
+
+    """first_gage = rain_df.columns[0]
     logger.info(f"\nTesting analysis on first gage: {first_gage}")
 
     result = analyze_single_gage(rain_df, first_gage)
@@ -125,6 +165,6 @@ def main():
     
     logger.info(f"Output directory: {OUTPUT_DIR}")
     logger.info("Analysis complete!")
-
+"""
 if __name__ == "__main__":
     main()
