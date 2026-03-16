@@ -338,6 +338,15 @@ def investigate_gage_timing(rain_df):
 
         print(f"{gage:<12} records at minutesL {minutes_sorted}")
 
+def save_results(summary_df, output_dir):
+    filename = f"coobservation_analysis_{datetime.now().strftime('%Y-%m-%d_%H%M')}.csv"
+    filepath = os.path.join(output_dir, filename)
+
+    summary_df.to_csv(filepath, index=False)
+    logger.info(f"Results saved to: {filepath}")
+
+    return filepath
+
 def main():
     logger.info("Starting gauge analysis...")
 
@@ -351,14 +360,27 @@ def main():
     # Load into DataFrame
     rain_df = load_database_to_dataframe(db_path)
 
+    # Limit dates
+    if START_DATE and END_DATE:
+        rain_df = rain_df.loc[START_DATE:END_DATE]
+        logger.info(f"Filtered to {START_DATE} to {END_DATE}: {len(rain_df):,} timestamps")
+
     # Check true missingness
-    investigate_true_missingness(rain_df)
+    # investigate_true_missingness(rain_df)
     logger.info("Analysis complete!")
+
+    # Quick summary
+    print(f"\nData Summary:")
+    print(f"  Timestamps: {len(rain_df):,}")
+    print(f"  Gages: {len(rain_df.columns)}")
+    print(f"  Date range: {rain_df.index.min()} to {rain_df.index.max()}")
 
     # Analyze all gages
     summary = analyze_all_gages(rain_df)
     print(summary.to_string(index = False))
 
+    save_results(summary, OUTPUT_DIR)
+    logger.info("Analysis complete!")
 
     # Below calls are useful to analyzing data gaps
     """investigate_data_quality(rain_df)
