@@ -104,6 +104,78 @@ def analyze_single_gage(rain_df, gage_name):
         'pct_missing': round(pct_missing, 2)
     }
 
+def analyze_gage_coobservation(rain_df, gage_name):
+
+    total_timesteps = len(rain_df)
+
+    # Where is this gage missing
+    missing_mask = rain_df[gage_name].isna()
+    n_missing = missing_mask.sum()
+
+    # When this gage is missing, are other gages missing
+    when_missing = rain_df.loc[missing_mask] # Rows where this gage is missing
+    others = when_missing.drop(columns=gage_name) # All other gages
+
+    # Do any other gages have data?
+    others_have_data = others.isna().any(axis=1) # True if at least one other gage has data
+    all_others_missing = others.notna().all(axis=1) # True if all others are missing data
+
+    n_missing_but_others_observe = others_have_data.sum()
+    n_missing_and_all_others_missing = all_others_missing.sum()
+
+    # Calculate percentages
+    pct_missing = (n_missing / total_timesteps) * 100
+
+    # These are % of the missing time (not total time)
+    if n_missing > 0:
+        pct_others_observe = (n_missing_but_others_observe / n_missing) * 100
+        pct_all_missing = (n_missing_and_all_others_missing / n_missing) * 100
+    else:
+        pct_others_observe = 0
+        pct_all_missing = 0
+
+    # What rainfall when this gage is missing but other observe?
+    # Getting all values from other gages at this time
+    when_missing_but_others_observe = when_missing.loc[others_have_data]
+    other_values = when_missing_but_others_observe.drop(columns=gage_name)
+
+    # Into one series (all rainfall data from other gages)
+    all_other_rainfall = other_values.stack()
+
+    # Calc percentiles
+    if len(all_other_rainfall) > 0:
+        percentiles = all_other_rainfall.quantile([0.05, 0.25, 0.50, 0.75, 0.95])
+    else:
+        percentiles = pd.Series([np.nan] * 5, index = [0.05, 0.25, 0.50, 0.75, 0.95])
+
+    return {
+        'gage': gage_name,
+        'pct_missing': round(pct_missing, 2),
+        'pct_others_observe_when_missing': round(pct_others_observe, 2),
+        'pct_all_missing_when_missing': round(pct_all_missing, 2),
+        'other_rain_05th': round(percentiles[0.05], 4),
+        'other_rain_25th': round(percentiles[0.25], 4),
+        'other_rain_50th': round(percentiles[0.50], 4),
+        'other_rain_75th': round(percentiles[0.75], 4),
+        'other_rain_95th': round(percentiles[0.95], 4),
+        'n_coobservations': len(all_other_rainfall)
+    }
+
+def analyze_all_gages(rain_df):
+    
+    results = []
+    n_gages = len(rain_df.columns)
+
+    for i, gage in enumerate(rain_df.columns):
+        logger.info(f"[{i+1}/{n_gages}] Analyzing {gage}...")
+        result = analyze_gage_coobservation(rain_df, gage)
+        results.append(result)
+
+    # Convert list of dicts to DataFrame
+    summary = pd.DataFrame(results)
+
+    return summary
+        
 def investigate_data_quality(rain_df):
 
     logger.info("\n" + "="*60)
@@ -283,24 +355,17 @@ def main():
     investigate_true_missingness(rain_df)
     logger.info("Analysis complete!")
 
+    # Analyze all gages
+    summary = analyze_all_gages(rain_df)
+    print(summary.to_string(index = False))
+
+
     # Below calls are useful to analyzing data gaps
     """investigate_data_quality(rain_df)
     investigate_yearly_pattern(rain_df, "HYDRA-4")
     investigate_hourly_pattern(rain_df, "HYDRA-4")
     investigate_minute_pattern(rain_df, "HYDRA-4")
     investigate_gage_timing(rain_df)
-"""
-    """first_gage = rain_df.columns[0]
-    logger.info(f"\nTesting analysis on first gage: {first_gage}")
-
-    result = analyze_single_gage(rain_df, first_gage)
-
-    print("\n Result:")
-    for key, value in result.items():
-        print(f"  {key}: {value}")
-    
-    logger.info(f"Output directory: {OUTPUT_DIR}")
-    
 """
 if __name__ == "__main__":
     main()
