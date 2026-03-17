@@ -7,6 +7,9 @@ load_dotenv()
 BASE_URL = os.getenv("AQUARIUS_BASE_URL")
 USERNAME = os.getenv("AQUARIUS_USERNAME")
 PASSWORD = os.getenv("AQUARIUS_PASSWORD")
+# Date filters (set to None to use all data)
+START_DATE = '1980-01-01'
+END_DATE = '2010-12-31'
 
 OUTPUT_DIR = os.getenv("OUTPUT_DIRECTORY")
 

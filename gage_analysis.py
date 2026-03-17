@@ -7,7 +7,7 @@ import numpy as np
 
 
 # Import shared configuration
-from config import OUTPUT_DIR
+from config import OUTPUT_DIR, START_DATE, END_DATE
 
 # Set up logging
 logging.basicConfig(
@@ -117,8 +117,8 @@ def analyze_gage_coobservation(rain_df, gage_name):
     others = when_missing.drop(columns=gage_name) # All other gages
 
     # Do any other gages have data?
-    others_have_data = others.isna().any(axis=1) # True if at least one other gage has data
-    all_others_missing = others.notna().all(axis=1) # True if all others are missing data
+    others_have_data = others.notna().any(axis=1) # True if at least one other gage has data
+    all_others_missing = others.isna().all(axis=1) # True if all others are missing data
 
     n_missing_but_others_observe = others_have_data.sum()
     n_missing_and_all_others_missing = all_others_missing.sum()
