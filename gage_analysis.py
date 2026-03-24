@@ -123,6 +123,12 @@ def analyze_gage_coobservation(rain_df, gage_name):
     n_missing_but_others_observe = others_have_data.sum()
     n_missing_and_all_others_missing = all_others_missing.sum()
 
+    check_values = n_missing_but_others_observe + n_missing_and_all_others_missing
+    if check_values != n_missing:
+        logger.warning(f"   {gage_name}: Value Check Failed")
+        logger.warning(f"    n_missing: {n_missing}")
+        logger.warning(f"    others_observe + all_missing = {check_values}")
+
     # Calculate percentages
     pct_missing = (n_missing / total_timesteps) * 100
 
