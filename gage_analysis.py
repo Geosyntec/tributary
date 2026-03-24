@@ -189,7 +189,7 @@ def investigate_data_quality(rain_df):
     logger.info("="*60)
 
     # Time range info
-    print(f"\nTime Range:")
+    print("\nTime Range:")
     print(f"  Start: {rain_df.index.min()}")
     print(f"  End:   {rain_df.index.max()}")
     print(f"  Total Timesteps: {len(rain_df):,}")
@@ -199,7 +199,7 @@ def investigate_data_quality(rain_df):
     print(f"  Time span: {time_span.days / 365:.1f} years")
 
     # Check when each gage FIRST has data
-    print(f"\nFirst valid data point per gage:")
+    print("\nFirst valid data point per gage:")
     for gage in rain_df.columns:
         first_valid = rain_df[gage].first_valid_index()
         print(f"  {gage}: {first_valid}")
@@ -376,7 +376,7 @@ def main():
     logger.info("Analysis complete!")
 
     # Quick summary
-    print(f"\nData Summary:")
+    print("\nData Summary:")
     print(f"  Timestamps: {len(rain_df):,}")
     print(f"  Gages: {len(rain_df.columns)}")
     print(f"  Date range: {rain_df.index.min()} to {rain_df.index.max()}")
