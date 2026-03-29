@@ -70,7 +70,11 @@ class Storm:
     
 
     ## Missing Data Properties
-
+    @property
+    def gauge_missing(self):
+        # Percent missing by gauge
+        return self.rain_data.isna().sum()/self.n_timestamps
+    
     @property
     def avg_gauges_missing(self):
         # Average number of gauges with missing data per timestamp
