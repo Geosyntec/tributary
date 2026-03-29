@@ -1,7 +1,7 @@
 import os
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)
 
 # Get credentials from environment
 BASE_URL = os.getenv("AQUARIUS_BASE_URL")
