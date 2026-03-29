@@ -183,7 +183,7 @@ class StormCatalog:
         download_date = datetime.now().strftime("%Y-%m-%d")
 
         if dl_csv:
-            filename = f"storm_catalog_downloaded_{download_date}.csv"
+            filename = f"storm_catalog_inteventhr{self.interevent_hours}_mingauges{self.min_gauges}_{download_date}.csv"
         elif dl_sql:
             filename = f"precipitation_15min_downloaded_{download_date}.db"
         else:
