@@ -28,7 +28,7 @@ def main():
     ### Find Storms
     catalog = StormCatalog(
         rain_df,
-        min_gauges=3,
+        min_gauges=2,
         interevent_hours=6
     )
     catalog.find_storms()
@@ -64,6 +64,8 @@ def main():
     # Export
     catalog.to_csv(OUTPUT_DIR)
     logger.info("Analysis complete!")
+
+    return catalog
 
 if __name__ == "__main__":
     main()
