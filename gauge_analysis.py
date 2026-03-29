@@ -6,7 +6,7 @@ import numpy as np
 
 # Import shared configuration
 from config import OUTPUT_DIR, START_DATE, END_DATE
-from data_loader import find_latest_database, load_database_to_dataframe, filter_by_date
+from data_loader import find_latest_database, load_rainfall_data, filter_by_date
 from logging_setup import setup_logging, get_logger
 
 # Set up logging
@@ -293,7 +293,7 @@ def main():
         return
     
     # Load into DataFrame
-    rain_df = load_database_to_dataframe(db_path)
+    rain_df = load_rainfall_data(db_path)
 
     # Limit dates
     rain_df = filter_by_date(rain_df, START_DATE, END_DATE)
