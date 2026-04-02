@@ -107,7 +107,7 @@ class StormCatalog:
         logger.info(f"  Storms Identified: {n_storms:,}")
 
     def _create_storm_objects(self):
-        logger.info(f"  Creating Storm Objects...")
+        logger.info("  Creating Storm Objects...")
         n_storms = self.storm_series.max()
 
         self.storms = [] # Assigns empty list in case called twice
@@ -201,31 +201,29 @@ class StormCatalog:
             print("No storms found. Run find_storms() first.")
             return
         
-        print(f"\n{'='*50}")
+        print("\n{'='*50}")
         print("STORM CATALOG SUMMARY")
         print(f"{'='*50}")
         
-        print(f"\nParameters:")
+        print("\nParameters:")
         print(f"  Min gauges: {self.min_gauges}")
         print(f"  Inter-event hours: {self.interevent_hours}")
         
-        print(f"\nStorms:")
+        print("\nStorms:")
         print(f"  Total: {self.n_storms:,}")
         print(f"  First: {self.storms[0].start_time.date()}")
         print(f"  Last: {self.storms[-1].start_time.date()}")
         
         # Duration stats
         durations = [s.duration_hours for s in self.storms]
-        print(f"\nDuration (hours):")
+        print("\nDuration (hours):")
         print(f"  Min: {min(durations):.1f}")
         print(f"  Max: {max(durations):.1f}")
         print(f"  Mean: {sum(durations)/len(durations):.1f}")
         
         # Rainfall stats
         rainfalls = [s.mean_gauge_rain for s in self.storms]
-        print(f"\nMean Rainfall (inches):")
+        print("\nMean Rainfall (inches):")
         print(f"  Min: {min(rainfalls):.3f}")
         print(f"  Max: {max(rainfalls):.3f}")
         print(f"  Mean: {sum(rainfalls)/len(rainfalls):.3f}")
-
-        

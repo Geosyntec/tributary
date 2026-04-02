@@ -166,4 +166,3 @@ class Storm:
             f"{self.duration_hours:.1f}hrs,"
             f"{self.total_rain:.2f} rain)"
         )
-
