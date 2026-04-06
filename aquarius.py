@@ -542,4 +542,332 @@ class AquariusDatazSource(BaseDataSource):
             self.logger.info(f"  Total: {len(all_data_points):,} data points")
 
             return all_data_points
+    
+    def _export_dataset(
+            self,
+            identifier: str,
+            start_time: datetime,
+            end_time: datetime
+    ) -> List[DataPoint]:
+        """
+        Export time series data for a single Aquarius dataset.
+        
+        This uses the Aquarius bulk export API to retrieve data points.
+        
+        Args:
+            identifier: The dataset identifier
+            start_time: start of the export period
+            end_time: end of the export period
+            
+        Returns:
+            List of DataPoint objects
+        """
+        
+        # Build the request body for the bulk export API
+        body = {
+            "Datasets": [
+                {"identifier": identifier}
+            ],
+            "StartTime": start_time.isoformat(),
+            "EndTime": end_time.isoformat(),
+            "Interval": "PointAsRecorded", # Gives us raw data
+            "RoundData": False, 
+            "IncludeGradeCodes": False,
+            "IncludeQualifiers": False,
+            "IncludeApprovalLevels": False,
+            "IncludeInterpolationTypes": False
+        }
+
+        # Make the API request
+        result = self._post("export/bulk", body)
+
+        if not result:
+            self.logger.warning(f"No data returned for {identifier}")
+            return []
+        
+        # Parse the response into DataPoint objects
+        return self._parse_export_response(result)
+    
+    def _parse_export_response(self, result: Dict) -> List[DataPoint]:
+        """
+        Parse the Aquarius bulk export response into DataPoint objects
+
+        AQUARIUS EXPORT RESPONSE STRUCTURE:
+
+        {
+            "series": [
+                {
+                    "dataset": {
+                        "identifier": "Precipitation@HYDRA-1",
+                        "locationIdentifier": "HYDRA-1",
+                        "parameter": "Precipitation",
+                        "unit": "inches",
+                        ...
+                    },
+                    "numPoints": 1000,
+                    "points": [
+                        {
+                            "timestamp": "2024-01-15T12:00:00Z",
+                            "value": 0.05
+                        },
+                        {
+                            "timestamp": "2024-01-15T12:15:00Z", 
+                            "value": 0.02
+                        },
+                        ...
+                    ]
+                }
+            ]
+        }
+
+        Arguments:
+            result: The parsed JSON response form the export API
+
+        Returns:
+            List of DataPoint objects
+        """
+
+        data_points = []
+
+        # Get the series list (usually just one series per dataset)
+        series_list = result.get("series", [])
+
+        for series in series_list:
+            # Extract dataset metadata
+            dataset_info = series.get("dataset", {})
+
+            location = dataset_info.get("locationIdentifier", "unknown")
+            parameter = dataset_info.get("parameter", "unknown")
+            unit = dataset_info.get("unit", "unknown")
+
+            # Get The data points
+            points = series.get("points", [])
+
+            num_points = series.get("numPoints", len(points))
+            self.logger.debug(f"   Processing {num_points} points for {location}")
+
+            # Convert each point
+            for point in points:
+                try:
+                    # Parse timestamp
+                    ts_str = point.get("timestamp", "")
+                    if not ts_str:
+                        continue
+
+                    # Handle Aquarius timestamp format
+                    # Usually ISO format "2024-01-15T12:00:00Z"
+
+                    timestamp = self._parse_timestamp(ts_str)
+
+                    if timestamp is None:
+                        continue
+                    
+                    # Get the value
+                    value = point.get("value")
+
+                    # Skip missing values
+                    if value is None:
+                        continue
+
+                    # Convert to float (might be string)
+                    value = float(value)
+
+                    # Create  standardized DataPoint
+                    data_points.append(DataPoint(
+                        timestamp=timestamp,
+                        value=value,
+                        location_id=location,
+                        parameter=parameter,
+                        unit=unit,
+                        source=self.source_name
+                    ))
+
+                except (ValueError, TypeError) as e:
+                    self.logger.debug(f"   Skipping invalud point: {e}")
+                    continue
+
+            return data_points
+        
+    def _parse_timestamp(self, ts_str: str) -> Optional[datetime]:
+        """
+        Parse and Aquarius timestamp string into a datetime object
+        
+        This method haldes all format variations
+        
+        Arguments:
+            ts_str: the timestamp string from aquarius
+            
+        Returns:
+            datetime object, or None if parsing fails
+        """
+
+        if not ts_str:
+            return None
+        
+        try:
+            # Handle 'Z' suffix (UTC)
+            # Pythons fromisoformat doesnt like 'Z', wants +00:00
+            if ts_str.endswith('Z'):
+                ts_str = ts_str[:-1] + '+00:00'
+
+            # Handle milliseconds
+            if '.' in ts_str:
+                # Split on the decimal point
+                before_decimal = ts_str.split('.')[0]
+                after_decimal = ts_str.split('.')[1]
+
+                # Find where timezone starts 
+                tz_part = ""
+                for i, char in enumerate(after_decimal):
+                    if char in ['+', "-"]:
+                        tz_part = after_decimal[i:]
+                        break
+                
+                # Reconstruct, no milliseconds
+                ts_str = before_decimal + tz_part
+
+            # Parse with fromisoformat
+            return datetime.fromisoformat(ts_str)
+        
+        except ValueError as e:
+            self.logger.debug(f"Failed to parse timestamp '{ts_str}': {e}")
+            return None
+
+    # ---------------------------------------------------------
+    # CONVENIENCE METHODS - Make the API easier to use
+    # ---------------------------------------------------------       
+    
+    def get_precipitation(
+        self,
+        site_ids: List[str],
+        start_date: datetime,
+        end_date: datetime
+    ) -> List[DataPoint]:
+        """
+        Get precipitation data from specified sites
+        
+        This is a convenience method taht calsl get_data() with parameter='Precipitation' Saves typing for common use case
+        
+        Arguments:
+            site_ids: List of location identifiers
+            start_date: Start of data period
+            end_date: End of data period
+
+        Returns:
+            List of DataPoint objects
+        """
+        return self.get_data(
+            site_ids=site_ids,
+            parameter='Precipitation',
+            start_date=start_date,
+            end_date=end_date
+        )
+    
+    def get_datasets(self) -> List[Dict]:
+        """
+        Get all available datasets from Aquarius
+        
+        Returns raw dataset info from Aquarius
+        
+        Returns:
+            List of dataset dictionaries with fiels like:
+            - identifier
+            - parameter
+            - unit
+            - startOfRecord
+            - endOfRecord
+
+        Example:
+            datasets = aquarius.get_datasets()
+            for ds in datasets[:5]:
+                print(f"{ds['identifier']}: {ds['parameter']}")
+        """
+        response = self._get("data-set")
+        return response.get("datsets", []) if response else []
+    
+    def get_alerts(self) -> List[Dict]:
+        """
+        Get active alerts from Aquarius
+        
+        Alerts indicate unusual conditions
+        
+        Returns:
+            List of alert dictionaries
+        """
+        response = self._get("alerts")
+        return response if response else []
+    
+    def find_datasets(
+        self,
+        must_contain_all: Optional[List[str]] = None,
+        must_contain_any: Optional[List[str]] = None
+    ) -> List[Dict]:
+        """
+        Find datasets matching search criteria
+        
+        SEarches dataset identifiers for matching text
+        Similar to find_datasets() from aquarius_data_downloader
+        
+        Arguments:
+            must_contain_all: List of strings that must ALL appear in the identifier (case-insensitive)
+            
+            must_contain_any: List of strings where AT LEAST ONE must match the station name exactly
+
+        Returns:
+            List of matching dataset dictionaries
+
+        Example:
+            # Find all precipitation datasets
+            datasets = aquarius.find_datasets(must_contain_all=['Precipitation'])
+            
+            # Find datasets for specific stations
+            datasets = aquarius.find_datasets(
+                must_contain_any=['HYDRA-1', 'HYDRA-2', 'HYDRA-3']
+            )
+            
+            # Combine filters
+            datasets = aquarius.find_datasets(
+                must_contain_all=['Precipitation'],
+                must_contain_any=['HYDRA-1', 'HYDRA-2']
+            )
+        """
+
+        all_datasets = self.get_datasets()
+        matching = []
+
+        for ds in all_datasets:
+            identifier = ds.get("identifier", "")
+
+            # Extract station name from identifier
+            if "@" in identifier:
+                station = identifier.split("@")[-1]
+            else:
+                station = identifier
+
+            matches = True
+
+            # Check must_contain_any (extract station match)
+            if must_contain_any:
+                any_match = False
+                for text in must_contain_any:
+                    if text.lower() == station.lower():
+                        any_match = True
+                        break
+                if not any_match:
+                    matches = False
+
+            # Check must_contain_all (substring mach)
+            if must_contain_all and matches:
+                for text in must_contain_all:
+                    if text.lower() not in identifier.lower():
+                        matches = False
+                        break
+        
+            if matches:
+                matching.append(ds)
+
+        self.logger.info(f"Found {len(matching)} matching datasets")
+        return matching
+
+
         
