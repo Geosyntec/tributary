@@ -10,3 +10,14 @@ Usage:
     usgs = USGSDataSource()
     sites = usgs.get_sites(state='OR')
 """
+
+from .base import BaseDataSource, DataPoint, SiteInfo
+from .aquarius import AquariusDataSource
+
+__all__ = [
+    'BaseDataSource',
+    'DataPoint',
+    'SiteInfo',
+    'AquariusDataSource',
+    
+]
