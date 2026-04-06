@@ -18,6 +18,8 @@ __all__ = [
     'BaseDataSource',
     'DataPoint',
     'SiteInfo',
-    'AquariusDataSource',
-    
+
+    # Data sources
+    'AquariusDataSource', 
+    # 'USGSDataSource', # uncomment when written
 ]
