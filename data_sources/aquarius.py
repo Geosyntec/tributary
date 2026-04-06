@@ -16,7 +16,7 @@ from .base import BaseDataSource, DataPoint, SiteInfo # .base means "from this p
 
 logger = logging.getLogger(__name__)
 
-class AquariusDatazSource(BaseDataSource):
+class AquariusDataSource(BaseDataSource):
     """
     Aquarius WebPortal API client
     
