@@ -380,3 +380,166 @@ class AquariusDatazSource(BaseDataSource):
                     self.logger.debug(f"   - {site.site_id}: {site.name}")
         
         return sites
+    
+    def get_available_parameters(self, site_id: str) -> List[Dict[str,str]]:
+        """
+        Get list of avaialable parameters at an Aquarius location
+        
+        This means finding all dtasets taht belong to a specific location
+        Typically looks like: "Parameter@Location" (e.g., "Precipitation@HYDRA-1")
+        
+        Arguments:
+            site_id: Location identifier
+            
+        Returns:
+            List of dictionaries, each containing:
+            - 'code': The paramenter name
+            - 'name': TSame as code for Aquarius
+            - 'unit': The unit of measurement
+
+        Example:
+            params = aquarius.get_available_paramenters("HYDRA-1")
+        """
+
+        self.logger.info(f"Getting available parameters for {site_id}")
+
+        # Get all datasets from Aquarius
+        response = self._get("data-set")
+
+        if not response:
+            self.logger.error("Failed to get datasets from Aquarius")
+            return []
+        
+        datasets = response.get("datsets", [])
+
+        self.logger.debug(f"  Total datasets in system: {len(datasets)}")
+
+        # Find datsets belonging to this location
+        parameters = []
+        seen_params = set() # Track unique parameters
+
+        for ds in datasets:
+            identifier = ds.get("identifier", "")
+
+            # Check if this datasets belongs to our location
+
+            # Extract location from the identifier
+
+            if "@" in identifier:
+                # Split on @ and take the last part
+                dataset_location = identifier.split("@")[-1]
+            else:
+                # No @ in identifier, use whole thing
+                dataset_location = identifier
+            
+            # Case insensitive comparison
+            if dataset_location.lower() != site_id.lower():
+                continue
+
+            # Extract parameter information
+            param = ds.get("parameters", "")
+            unit = ds.get("unit", "unknown")
+
+            # Skip if parameter already seen
+            if param in seen_params:
+                continue
+
+            seen_params.add(param)
+
+            parameters.append({
+                'code': param,      # Paramter name acts as code
+                'name': param,      # Same as code for Aquarius
+                'unit': unit
+            })
+
+            self.logger.info(f"  Found {len(parameters)} parameters at {site_id}")
+
+            for p in parameters:
+                self.logger.debut(f"   - {p['code'] ({p['unit']})}")
+
+            return parameters
+        
+    def get_data(
+            self,
+            site_ids: List[str],
+            parameter: str,
+            start_date: datetime,
+            end_date: datetime,
+            **kwargs
+        ) -> List[DataPoint]:
+            """
+            Get time series data from Aquarius
+            
+            This method finds all datasets matching the sites and parameter,
+            exports data for each dataset using the bulk export API,
+            and converts the results to the standard DataPoint format
+            
+            Arguments:
+                site_ids: List of location identifiers
+                
+                parameter: The Parameters name (ex. 'Precipitation')
+                
+                start_date: start date of the data period
+                
+                end_date: end date of the data period
+                
+                **kwargs: Additional parameters
+                
+            Returns:
+                List of DataPoint objects containing the time series data
+                
+            Example:
+                data = aquarius.get_data(
+                    site_ids=['HYDRA-1', 'HYDRA-2'],
+                    parameter='Precipitation',
+                    start_date=datetime(2020, 1, 1),
+                    end_date=datetime(2024, 1, 1)
+                )
+                
+                print(f"Got {len(data)} data points")
+                
+                # Convert to DataFrame
+                df = aquarius.to_dataframe(data)
+            """
+
+            self.logger.info("Fetching Aquarius data...")
+            self.logger.info(f"  Sites: {', '.join(site_ids)}")
+            self.logger.info(f"  Paramter: {parameter}")
+            self.logger.info(f"  Date range: {start_date.date()} to {end_date.date()}")
+
+            # Find the matchign datasets
+            # We need to build datset identifiers like "Precipitation@HYDRA-1"
+            dataset_identifiers = self._find_dataset_identifiers(
+                site_id=site_ids,
+                parameter=parameter,
+                start_date=start_date,
+                end_date=end_date
+            )
+
+            if not dataset_identifiers:
+                self.logger.warning("No matching datasets found")
+                return []
+            
+            self.logger.info(f"  Found {len(dataset_identifiers)} matching datasets")
+
+            # Export data for each dataset
+            all_data_points = []
+
+            for i, identifier in enumerate(dataset_identifiers, 1):
+                self.logger.info(f"  [{i}/{len(dataset_identifiers)}] Exporting {identifier}")
+
+                # Export this dataset
+                points = self._export_dataset(
+                    identifier=identifier,
+                    start_time=start_date,
+                    end_time=end_date
+                )
+
+                all_data_points.extend(points)
+
+                self.logger.debug(f"    Got {len(points)} points")
+            
+            self.logger.info(f"  Total: {len(all_data_points):,} data points")
+
+            return all_data_points
+        
