@@ -18,6 +18,7 @@ sys.path.insert(0, str(project_root))
 from datetime import datetime
 import logging
 
+
 # Set up logging so we can see what's happening
 logging.basicConfig(
     level=logging.INFO,
@@ -353,6 +354,81 @@ def test_get_datasets():
     
     return True
 
+def debug_aquarius_response():
+    """Peek at the raw API response to see field names."""
+    
+    print("\n" + "=" * 60)
+    print("DEBUG: Raw Aquarius Response")
+    print("=" * 60)
+    
+    # Load credentials
+    try:
+        from config import BASE_URL, USERNAME, PASSWORD
+    except ImportError:
+        print("  - SKIPPED: config.py not found")
+        return
+    
+    from data_sources import AquariusDataSource
+    
+    aquarius = AquariusDataSource(
+        base_url=BASE_URL,
+        username=USERNAME,
+        password=PASSWORD,
+        verify_ssl=False
+    )
+    
+    # Look at the RAW response directly
+    response = aquarius._get("locations")
+    
+    if not response:
+        print("  No response!")
+        return
+    
+    # Print the top-level keys
+    print(f"\nTop-level keys in response: {list(response.keys())}")
+    
+    # Get the locations list
+    # Try different possible key names
+    for key in ['locations', 'Locations', 'items', 'Items', 'results', 'Results']:
+        if key in response:
+            print(f"\nFound locations under key: '{key}'")
+            locations = response[key]
+            print(f"Number of locations: {len(locations)}")
+            
+            if locations:
+                print(f"\nFirst location - ALL FIELDS:")
+                first = locations[0]
+                for field_name, field_value in first.items():
+                    print(f"  '{field_name}': {field_value}")
+            break
+    else:
+        print("\nCouldn't find locations list!")
+        print("Full response (first 500 chars):")
+        print(str(response)[:500])
+    
+    # Also check datasets endpoint
+    print("\n" + "=" * 60)
+    print("DEBUG: Datasets endpoint")
+    print("=" * 60)
+    
+    # Try different endpoint names
+    for endpoint in ['data-set', 'datasets', 'DataSets', 'dataset']:
+        print(f"\nTrying endpoint: '{endpoint}'")
+        ds_response = aquarius._get(endpoint)
+        
+        if ds_response:
+            print(f"  SUCCESS! Keys: {list(ds_response.keys())}")
+            
+            # Find the datasets list
+            for key in ds_response.keys():
+                value = ds_response[key]
+                if isinstance(value, list):
+                    print(f"  Found list under key '{key}': {len(value)} items")
+                    if value:
+                        print(f"  First item fields: {list(value[0].keys())}")
+            break
+        else:
+            print(f"  Failed (404 or error)")
 
 def main():
     """Run all tests."""
@@ -370,6 +446,9 @@ def main():
     results.append(("Aquarius Connection", test_aquarius_connection()))
     results.append(("get_sites()", test_get_sites()))
     results.append(("get_datasets()", test_get_datasets()))
+    
+    # Add debug call
+    debug_aquarius_response()
     
     # Summary
     print("\n" + "#" * 60)

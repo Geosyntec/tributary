@@ -30,10 +30,16 @@ DATASET_CONFIGS = {
         "must_contain_any": ["HYDRA-1"],
         "must_start_before": None,
         "must_end_after": None
+    },
+    "all_precip": {
+        "must_contain_all": ["precip", "15min"],
+        "must_contain_any": None,
+        "must_start_before": None,
+        "must_end_after": None
     }
 }
 
-ACTIVE_CONFIG = "15_min_precip_longest"
+ACTIVE_CONFIG = "all_precip"
 
 SAVE_CSV = True
 SAVE_SQL = True
@@ -256,7 +262,7 @@ class AquariusPortal:
         matching = []
 
         for ds in datasets_list:
-            identifier = ds.get("identifier", "")
+            identifier = ds.get("identifier") or ""
             start = (ds.get("startOfRecord") or "")[:10]
             end = (ds.get("endOfRecord") or "")[:10]
 

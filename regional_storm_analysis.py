@@ -28,7 +28,7 @@ def main():
     ### Find Storms
     catalog = StormCatalog(
         rain_df,
-        min_gauges=2,
+        min_gauges=1,
         interevent_hours=6
     )
     catalog.find_storms()
