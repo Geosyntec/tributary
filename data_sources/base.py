@@ -11,6 +11,8 @@ from typing import List, Optional, Dict, Any
 import pandas as pd
 import logging
 
+logger = logging.getLogger(__name__)
+
 # =========================================================
 # DATA CLASSES - Standardized Data Structure
 # =========================================================
@@ -206,9 +208,20 @@ class BaseDataSource(ABC):
         
         returns a dataframe with standardized columns
         """
+
+        
+        STANDARD_COLUMNS = [
+            'timestamp',
+            'value', 
+            'location',
+            'parameter',
+            'unit',
+            'source',
+            'quality_flag'
+        ]
         if not data_points:
             self.logger.warning("No data points to convert")
-            return pd.DataFrame()
+            return pd.DataFrame(columns=STANDARD_COLUMNS)
         
         # Use each DataPoint's to_dict method
         data = [dp.to_dict() for dp in data_points]

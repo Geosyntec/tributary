@@ -10,9 +10,12 @@ Usage:
     usgs = USGSDataSource()
     sites = usgs.get_sites(state='OR')
 """
-
+# Import base classes
 from .base import BaseDataSource, DataPoint, SiteInfo
+
+# Import data sources
 from .aquarius import AquariusDataSource
+from .usgs import USGSDataSource
 
 __all__ = [
     'BaseDataSource',
@@ -21,5 +24,5 @@ __all__ = [
 
     # Data sources
     'AquariusDataSource', 
-    # 'USGSDataSource', # uncomment when written
+    'USGSDataSource',
 ]
